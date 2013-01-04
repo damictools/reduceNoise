@@ -1,0 +1,5 @@
+To compile:
+1. set the environmental variable FITSIOROOT your cfitsio directory 
+   where header files and the libcfitsio.a library are located
+2. make
+
