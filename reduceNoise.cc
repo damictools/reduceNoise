@@ -143,16 +143,18 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
   fits_get_num_hdus(infptr, &nhdu, &status);
   if (status != 0) return(status);
   
+  fitsfile *outfptr;   /* FITS file pointers defined in fitsio.h */
+  fits_create_file(&outfptr, outFile, &status);
+  
+  
   vector< double* > vPix;
   vector< int > vFullNCol;
   vector< int > vNLines;
   
   for (int n=1; n<=nhdu; ++n)  /* Main loop through each extension */
   {
-    int nOut = n;
     if (single){
       n = singleHdu;
-      nOut = 1;
     }
     const int nHDUsToProcess = (single>0)? 1 : nhdu;
     
@@ -176,6 +178,26 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
       continue;
     }
     
+    /* Explicitly create new image */
+    long naxesOut[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+    naxesOut[0] = naxes[0]/2;
+    naxesOut[1] = naxes[1];
+    bitpix = FLOAT_IMG;
+    fits_create_img(outfptr, bitpix, naxis, naxesOut, &status);
+    if (status) {
+      fits_report_error(stderr, status);
+      return(status);
+    }
+    /* copy the relevant keywords (not the structural keywords) */
+    int nkeys = 0;
+    fits_get_hdrspace(infptr, &nkeys, NULL, &status); 
+    for (int i = 1; i <= nkeys; ++i) {
+      char card[FLEN_CARD];
+      fits_read_record(infptr, i, card, &status);
+      if (fits_get_keyclass(card) > TYP_CMPRS_KEY) fits_write_record(outfptr, card, &status);
+    }
+    
+    
     double* outArray = new double[totpix];
     vPix.push_back(outArray);
     
@@ -186,9 +208,9 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
       else showProgress((n-1)*3+0,3*nHDUsToProcess);
     }
       
-    /* Open the input file */
-    fits_movabs_hdu(infptr, n, &hdutype, &status);
-    if (status != 0) return(status);
+//     /* Open the input file */
+//     fits_movabs_hdu(infptr, n, &hdutype, &status);
+//     if (status != 0) return(status);
     int xMin=1;
     int xMax=naxes[0];
     int yMin=1;
@@ -218,51 +240,38 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
       if(single) showProgress(3,3*nHDUsToProcess);
       else showProgress((n-1)*3+3,3*nHDUsToProcess);
     }
-    
     /* quit if only copying a single HDU */
     if (single) break;
   }
-  
-  fitsfile *outfptr;   /* FITS file pointers defined in fitsio.h */
-  fits_create_file(&outfptr, outFile, &status);
-  
+
   
   vector<float*> vPixOut;
   const unsigned int nExt=vPix.size();
   for(unsigned int i=0;i<nExt;++i){
-	
     /* Explicitly create new image */
     long naxesOut[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
-    naxesOut[0] = vFullNCol[0]/2;
-    naxesOut[1] = vNLines[1];
+    naxesOut[0] = vFullNCol[i]/2;
+    naxesOut[1] = vNLines[i];
     int bitpix = FLOAT_IMG;
     int naxis = 2;
-    fits_create_img(outfptr, bitpix, naxis, naxesOut, &status);
-    if (status) {
-      fits_report_error(stderr, status);
-      return(status);
-    }
     
     const long fullNCol = vFullNCol[0];
     const long nCol     = naxesOut[0];
     const long nLines   = naxesOut[1];
-    
     const long totpixOut = naxesOut[0]*naxesOut[1];
     float* outArray = new float[totpixOut];
     vPixOut.push_back(outArray);
-    
     for(int l=0;l<nLines;++l){
       for(int c=0;c<nCol;++c){
 	outArray[nCol*l + c] = vPix[i][ fullNCol*l + c + nCol];
       }
     }
     
+    int hdutype;
+    fits_movabs_hdu(outfptr, i+1, &hdutype, &status);
     long first = 1;
-    
     fits_write_img(outfptr, TFLOAT, first, totpixOut, outArray, &status);
-    
   }
-  
    
   
   /* Close the fits files */
