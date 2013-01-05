@@ -159,7 +159,7 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
     /* get input image dimensions and total number of pixels in image */
     int hdutype, bitpix, bytepix, naxis = 0;
     long naxes[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
-    fits_movabs_hdu(infptr, nOut, &hdutype, &status);
+    fits_movabs_hdu(infptr, n, &hdutype, &status);
     for (int i = 0; i < 9; ++i) naxes[i] = 1;
     fits_get_img_param(infptr, 9, &bitpix, &naxis, naxes, &status);
     long totpix = naxes[0] * naxes[1];
