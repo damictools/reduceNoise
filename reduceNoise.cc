@@ -23,8 +23,11 @@
 
 #include "TFile.h"
 #include "TNtuple.h"
+#include "TPrincipal.h"
 
 using namespace std;
+
+const int kVerbose = 1;
 
 int deleteFile(const char *fileName){
   cout << yellow;
@@ -124,6 +127,89 @@ string bitpix2TypeName(int bitpix){
   return typeName;
 }
 
+void computeMVASigma(const int iExt, const float cutVal, const vector< double* > &vPix, const vector< int > &vFullNCol, const vector< int > &vNLines, vector<double> &vCoef){
+  
+  const unsigned int kN = vPix.size();
+  Float_t vR[kN];
+  Float_t vL[kN];
+  
+  TPrincipal* principal = new TPrincipal(kN+1,"");
+  
+  const long fullNCol = vFullNCol[0];
+  const long nCol     = vFullNCol[0]/2;
+  const long nLines   = vNLines[0];
+  const Long64_t nPix = nCol*nLines;
+
+  Long64_t npri=0;
+  if(kVerbose){
+    cout << "Reading data..\n";
+  }
+  
+  for(int l=0;l<nLines;++l){
+    for(int c=0;c<nCol;++c){
+      
+      Double_t data[kN+1];
+      
+      data[kN] = vPix[iExt][fullNCol*l + c + nCol]; //vR[iExt-1];
+      for(int j=0;j<kN;++j) data[j] = vPix[j][ fullNCol*l - c + nCol -1];
+      
+      bool skip=false;
+      for(int j=0;j<kN+1;++j){
+	if(fabs(data[j])>cutVal){
+	  skip=true;
+	  break;
+	}
+      }
+      
+      if(skip) continue;
+      
+      principal->AddRow(data);
+      ++npri;
+    }
+  }
+  
+  if(kVerbose){
+    cout << "Done\nComputing Covariance Matrix..";
+  }
+  const TMatrixD *m = (principal->GetCovarianceMatrix());
+  
+//   m->Print();
+  TMatrixD MCovY(kN,kN);
+  
+  TMatrixD rCovXiY(kN,1);
+  
+  for(int i=0;i<kN;++i){
+    rCovXiY[i][0]=(*m)[kN][i];
+    for(int j=0;j<=i;++j){
+       MCovY[i][j]= (*m)[i][j];
+       
+       if(j!=i) MCovY[j][i]+= (*m)[i][j];
+    }
+  }
+  
+  if(kVerbose){
+    MCovY.Print();
+    cout << "Done\nInverting Matrix..\n";
+  }
+  TMatrixD invMCovY(MCovY);
+  invMCovY.Invert();
+  
+  TMatrixD ai(invMCovY*rCovXiY);
+
+  ostringstream transForm;
+  transForm << "R" <<iExt << " - (";
+  for(int i=0;i<kN;++i){
+    transForm << "+"<< ai[i][0] << "*L" << i;
+    vCoef.push_back(ai[i][0]);
+  }
+  transForm << ")"; 
+  
+  cout << transForm.str() << endl;
+  
+}
+
+
+
 
 int computeImage(const char *inFile, const char *outFile, const int singleHdu){
   int status = 0;
@@ -154,9 +240,9 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
   for (int n=1; n<=nhdu; ++n)  /* Main loop through each extension */
   {
     if (single){
-      n = singleHdu;
+//       n = singleHdu;
     }
-    const int nHDUsToProcess = (single>0)? 1 : nhdu;
+    const int nHDUsToProcess = nhdu;
     
     /* get input image dimensions and total number of pixels in image */
     int hdutype, bitpix, bytepix, naxis = 0;
@@ -174,7 +260,7 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
     
     /* Don't try to process data if the hdu is empty */    
     if (hdutype != IMAGE_HDU || naxis == 0 || totpix == 0){
-      if(single) break;
+      //if(single) break;
       continue;
     }
     
@@ -183,18 +269,21 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
     naxesOut[0] = naxes[0]/2;
     naxesOut[1] = naxes[1];
     bitpix = FLOAT_IMG;
-    fits_create_img(outfptr, bitpix, naxis, naxesOut, &status);
-    if (status) {
-      fits_report_error(stderr, status);
-      return(status);
-    }
-    /* copy the relevant keywords (not the structural keywords) */
-    int nkeys = 0;
-    fits_get_hdrspace(infptr, &nkeys, NULL, &status); 
-    for (int i = 1; i <= nkeys; ++i) {
-      char card[FLEN_CARD];
-      fits_read_record(infptr, i, card, &status);
-      if (fits_get_keyclass(card) > TYP_CMPRS_KEY) fits_write_record(outfptr, card, &status);
+    
+    if(!single || n==singleHdu) {
+      fits_create_img(outfptr, bitpix, naxis, naxesOut, &status);
+      if (status) {
+	fits_report_error(stderr, status);
+	return(status);
+      }
+      /* copy the relevant keywords (not the structural keywords) */
+      int nkeys = 0;
+      fits_get_hdrspace(infptr, &nkeys, NULL, &status); 
+      for (int i = 1; i <= nkeys; ++i) {
+	char card[FLEN_CARD];
+	fits_read_record(infptr, i, card, &status);
+	if (fits_get_keyclass(card) > TYP_CMPRS_KEY) fits_write_record(outfptr, card, &status);
+      }
     }
     
     
@@ -241,13 +330,20 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
       else showProgress((n-1)*3+3,3*nHDUsToProcess);
     }
     /* quit if only copying a single HDU */
-    if (single) break;
+    //if (single) break;
   }
 
   
   vector<float*> vPixOut;
   const unsigned int nExt=vPix.size();
   for(unsigned int i=0;i<nExt;++i){
+    if(single){
+      i=singleHdu-1;
+    }
+    float cutVal = 200;
+    vector<double> vCoef;
+    computeMVASigma(i, cutVal, vPix, vFullNCol, vNLines, vCoef);
+    
     /* Explicitly create new image */
     long naxesOut[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     naxesOut[0] = vFullNCol[i]/2;
@@ -263,14 +359,19 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
     vPixOut.push_back(outArray);
     for(int l=0;l<nLines;++l){
       for(int c=0;c<nCol;++c){
-	outArray[nCol*l + c] = vPix[i][ fullNCol*l + c + nCol];
+	outArray[nCol*l + c] = vPix[i][ fullNCol*l + c + nCol];// - vPix[i][ fullNCol*l - c + nCol -1]
+	for(unsigned int ex=0; ex<vCoef.size(); ++ex){
+	  outArray[nCol*l + c] -= vCoef[ex]*vPix[ex][ fullNCol*l - c + nCol -1];
+	}
       }
     }
     
     int hdutype;
-    fits_movabs_hdu(outfptr, i+1, &hdutype, &status);
+    if(!single) fits_movabs_hdu(outfptr, i+1, &hdutype, &status);
+    
     long first = 1;
     fits_write_img(outfptr, TFLOAT, first, totpixOut, outArray, &status);
+    if (single) break;
   }
    
   
