@@ -211,23 +211,34 @@ void computeMVASigma(const int iExt, const float cutVal, const vector< double* >
 
 
 
-int computeImage(const char *inFile, const char *outFile, const int singleHdu){
+int computeImage(const char *inFile, const char *outFile, const vector<int> &outHdu){
   int status = 0;
   double nulval = 0.;
   int anynul = 0;
-  int single = 0;
-  
-  int nhdu = 0;
-  
-  if (singleHdu>0){
-    single = 1; /* Copy only a single HDU if a specific extension was given */
-  }
+  int  nhdu = 0;
   
   fitsfile  *infptr; /* FITS file pointers defined in fitsio.h */
   fits_open_file(&infptr, inFile, READONLY, &status); /* Open the input file */
   if (status != 0) return(status);
   fits_get_num_hdus(infptr, &nhdu, &status);
   if (status != 0) return(status);
+  
+  vector<int> inHdu;
+//   for(unsigned int i=0;i<inHdu.size();++i){
+//     if(inHdu[i] > nhdu){
+//       fits_close_file(infptr,  &status);
+//       cerr << red << "\nError: the file does not have the required HDU!\n\n" << normal;
+//       return -1000;
+//     }
+//   }
+  
+  if(inHdu.size() == 0){
+    for(int i=0;i<nhdu;++i){
+      inHdu.push_back(i+1);
+    }
+  }
+  const unsigned int nUseHdu=inHdu.size();
+  
   
   fitsfile *outfptr;   /* FITS file pointers defined in fitsio.h */
   fits_create_file(&outfptr, outFile, &status);
@@ -237,12 +248,11 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
   vector< int > vFullNCol;
   vector< int > vNLines;
   
-  for (int n=1; n<=nhdu; ++n)  /* Main loop through each extension */
+  for(unsigned int eI=0; eI<nUseHdu; ++eI)  /* Main loop through each extension */
   {
-    if (single){
-//       n = singleHdu;
-    }
-    const int nHDUsToProcess = nhdu;
+    const unsigned int n = inHdu[eI];
+    
+    const int nHDUsToProcess = nUseHdu;
     
     /* get input image dimensions and total number of pixels in image */
     int hdutype, bitpix, bytepix, naxis = 0;
@@ -260,46 +270,19 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
     
     /* Don't try to process data if the hdu is empty */    
     if (hdutype != IMAGE_HDU || naxis == 0 || totpix == 0){
-      //if(single) break;
       continue;
     }
     
-    /* Explicitly create new image */
-    long naxesOut[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
-    naxesOut[0] = naxes[0]/2;
-    naxesOut[1] = naxes[1];
-    bitpix = FLOAT_IMG;
     
-    if(!single || n==singleHdu) {
-      fits_create_img(outfptr, bitpix, naxis, naxesOut, &status);
-      if (status) {
-	fits_report_error(stderr, status);
-	return(status);
-      }
-      /* copy the relevant keywords (not the structural keywords) */
-      int nkeys = 0;
-      fits_get_hdrspace(infptr, &nkeys, NULL, &status); 
-      for (int i = 1; i <= nkeys; ++i) {
-	char card[FLEN_CARD];
-	fits_read_record(infptr, i, card, &status);
-	if (fits_get_keyclass(card) > TYP_CMPRS_KEY) fits_write_record(outfptr, card, &status);
-      }
-    }
+    double* inArray = new double[totpix];
+    vPix.push_back(inArray);
     
-    
-    double* outArray = new double[totpix];
-    vPix.push_back(outArray);
-    
-    for(int i=0;i<totpix;++i) outArray[i] = 0;
+    for(int i=0;i<totpix;++i) inArray[i] = 0;
     
     if(gVerbosity){
-      if(single) showProgress(0,3*nHDUsToProcess);
-      else showProgress((n-1)*3+0,3*nHDUsToProcess);
+      showProgress((n-1)*3+0,3*nHDUsToProcess);
     }
       
-//     /* Open the input file */
-//     fits_movabs_hdu(infptr, n, &hdutype, &status);
-//     if (status != 0) return(status);
     int xMin=1;
     int xMax=naxes[0];
     int yMin=1;
@@ -309,37 +292,29 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
     long fpixel[2]={xMin,yMin};
     long lpixel[2]={xMax,yMax};
     long inc[2]={1,1};
-    fits_read_subset(infptr, TDOUBLE, fpixel, lpixel, inc, &nulval, outArray, &anynul, &status);
+    fits_read_subset(infptr, TDOUBLE, fpixel, lpixel, inc, &nulval, inArray, &anynul, &status);
     if (status != 0) return(status);
     if(gVerbosity){
-      if(single) showProgress(1,3*nHDUsToProcess);
-      else showProgress((n-1)*3+1,3*nHDUsToProcess);
+      showProgress((n-1)*3+1,3*nHDUsToProcess);
     }
     
     vFullNCol.push_back(naxes[0]);
     vNLines.push_back(naxes[1]);
     
-    
     if(gVerbosity){
-      if(single) showProgress(2,3*nHDUsToProcess);
-      else showProgress((n-1)*3+2,3*nHDUsToProcess);
+      showProgress((n-1)*3+2,3*nHDUsToProcess);
     }
-    
-    if(gVerbosity){
-      if(single) showProgress(3,3*nHDUsToProcess);
-      else showProgress((n-1)*3+3,3*nHDUsToProcess);
-    }
-    /* quit if only copying a single HDU */
-    //if (single) break;
-  }
 
+  }
   
+  
+  
+
+  const int nOutHdu = outHdu.size();
   vector<float*> vPixOut;
-  const unsigned int nExt=vPix.size();
-  for(unsigned int i=0;i<nExt;++i){
-    if(single){
-      i=singleHdu-1;
-    }
+  for (unsigned int oi=0; oi<nOutHdu; ++oi)  /* Main loop through each extension */
+  {
+    const int i = outHdu[oi]-1;
     float cutVal = 200;
     vector<double> vCoef;
     computeMVASigma(i, cutVal, vPix, vFullNCol, vNLines, vCoef);
@@ -366,12 +341,28 @@ int computeImage(const char *inFile, const char *outFile, const int singleHdu){
       }
     }
     
+    
+    
+    /* Explicitly create new image */
+    fits_create_img(outfptr, bitpix, naxis, naxesOut, &status);
+    if (status) {
+      fits_report_error(stderr, status);
+      return(status);
+    }
+    /* copy the relevant keywords (not the structural keywords) */
     int hdutype;
-    if(!single) fits_movabs_hdu(outfptr, i+1, &hdutype, &status);
+    fits_movabs_hdu(infptr, outHdu[oi], &hdutype, &status);
+    int nkeys = 0;
+    fits_get_hdrspace(infptr, &nkeys, NULL, &status); 
+    for (int r = 1; r <= nkeys; ++r) {
+      char card[FLEN_CARD];
+      fits_read_record(infptr, r, card, &status);
+      if (fits_get_keyclass(card) > TYP_CMPRS_KEY) fits_write_record(outfptr, card, &status);
+    }
+    
     
     long first = 1;
     fits_write_img(outfptr, TFLOAT, first, totpixOut, outArray, &status);
-    if (single) break;
   }
    
   
@@ -407,12 +398,13 @@ void checkArch(){
   }
 }
 
-int processCommandLineArgs(const int argc, char *argv[], int &singleHdu, string &inFile, string &outFile){
+int processCommandLineArgs(const int argc, char *argv[], vector<int> &singleHdu, string &inFile, string &outFile){
   
   if(argc == 1) return 1;
   
   bool outFileFlag = false;
   int opt=0;
+  singleHdu.clear();
   while ( (opt = getopt(argc, argv, "i:o:s:vVhH?")) != -1) {
     switch (opt) {
     case 'o':
@@ -426,13 +418,7 @@ int processCommandLineArgs(const int argc, char *argv[], int &singleHdu, string 
       }
       break;
     case 's':
-      if(singleHdu<0){
-        singleHdu = atoi(optarg);
-      }
-      else{
-        cerr << red << "\nError, can not set more than one HDU!\n\n"  << normal;
-        return 2;
-      }
+      singleHdu.push_back(atoi(optarg));
       break;
     case 'V':
     case 'v':
@@ -467,6 +453,8 @@ int processCommandLineArgs(const int argc, char *argv[], int &singleHdu, string 
     return 1;
   }
   
+  std::sort(singleHdu.begin(), singleHdu.end());
+  
   return 0;
 }
 
@@ -481,7 +469,7 @@ int main(int argc, char *argv[])
   
   string outFile;
   string inFile;
-  int singleHdu=-1;
+  vector<int> singleHdu;
   
   int returnCode = processCommandLineArgs( argc, argv, singleHdu, inFile, outFile);
   if(returnCode!=0){
