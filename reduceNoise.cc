@@ -130,19 +130,20 @@ string bitpix2TypeName(int bitpix){
 void computeMVASigma(const int iExt, const float cutVal, const vector< double* > &vPix, const vector< int > &vFullNCol, const vector< int > &vNLines, vector<double> &vCoef){
   
   const unsigned int kN = vPix.size();
-  Float_t vR[kN];
-  Float_t vL[kN];
+//  Float_t vR[kN];
+//  Float_t vL[kN];
   
   TPrincipal* principal = new TPrincipal(kN+1,"");
   
   const long fullNCol = vFullNCol[0];
   const long nCol     = vFullNCol[0]/2;
   const long nLines   = vNLines[0];
-  const Long64_t nPix = nCol*nLines;
+//  const Long64_t nPix = nCol*nLines;
 
   Long64_t npri=0;
   if(kVerbose){
-    cout << "Reading data..\n";
+    cout << "\nComputing the linear combination that minimizes the variance.\n";
+    cout << "Analyzing the data..\n";
   }
   
   for(int l=0;l<nLines;++l){
@@ -151,10 +152,10 @@ void computeMVASigma(const int iExt, const float cutVal, const vector< double* >
       Double_t data[kN+1];
       
       data[kN] = vPix[iExt][fullNCol*l + c + nCol]; //vR[iExt-1];
-      for(int j=0;j<kN;++j) data[j] = vPix[j][ fullNCol*l - c + nCol -1];
+      for(unsigned int j=0;j<kN;++j) data[j] = vPix[j][ fullNCol*l - c + nCol -1];
       
       bool skip=false;
-      for(int j=0;j<kN+1;++j){
+      for(unsigned int j=0;j<kN+1;++j){
 	if(fabs(data[j])>cutVal){
 	  skip=true;
 	  break;
@@ -178,9 +179,9 @@ void computeMVASigma(const int iExt, const float cutVal, const vector< double* >
   
   TMatrixD rCovXiY(kN,1);
   
-  for(int i=0;i<kN;++i){
+  for(unsigned int i=0;i<kN;++i){
     rCovXiY[i][0]=(*m)[kN][i];
-    for(int j=0;j<=i;++j){
+    for(unsigned int j=0;j<=i;++j){
        MCovY[i][j]= (*m)[i][j];
        
        if(j!=i) MCovY[j][i]+= (*m)[i][j];
@@ -198,7 +199,7 @@ void computeMVASigma(const int iExt, const float cutVal, const vector< double* >
 
   ostringstream transForm;
   transForm << "R" <<iExt << " - (";
-  for(int i=0;i<kN;++i){
+  for(unsigned 	int i=0;i<kN;++i){
     transForm << "+"<< ai[i][0] << "*L" << i;
     vCoef.push_back(ai[i][0]);
   }
@@ -255,7 +256,7 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
     const int nHDUsToProcess = nUseHdu;
     
     /* get input image dimensions and total number of pixels in image */
-    int hdutype, bitpix, bytepix, naxis = 0;
+    int hdutype, bitpix, naxis = 0;
     long naxes[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
     fits_movabs_hdu(infptr, n, &hdutype, &status);
     for (int i = 0; i < 9; ++i) naxes[i] = 1;
@@ -306,11 +307,14 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
     }
 
   }
-  
+  if(gVerbosity){
+      showProgress(1,1);
+      cout << " Done reading.\n";
+  }
   
   
 
-  const int nOutHdu = outHdu.size();
+  const unsigned int nOutHdu = outHdu.size();
   vector<float*> vPixOut;
   for (unsigned int oi=0; oi<nOutHdu; ++oi)  /* Main loop through each extension */
   {
@@ -379,10 +383,6 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
     delete[] vPixOut[i];
   }
   
-  if(gVerbosity){
-    showProgress(1,1);
-  }
-  
   return status;
 }
 
@@ -420,9 +420,8 @@ int processCommandLineArgs(const int argc, char *argv[], vector<int> &singleHdu,
     case 's':
       singleHdu.push_back(atoi(optarg));
       break;
-    case 'V':
-    case 'v':
-      gVerbosity = 1;
+    case 'q':
+      gVerbosity = 0;
       break;
     case 'h':
     case 'H':

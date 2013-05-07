@@ -4,7 +4,7 @@
 #include <math.h> 
 #include <map>
 
-int gVerbosity = false;
+int gVerbosity = true;
 
 inline double sq(double x){return x*x;};
 
