@@ -244,7 +244,7 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
   fitsfile *outfptr;   /* FITS file pointers defined in fitsio.h */
   fits_create_file(&outfptr, outFile, &status);
   
-  
+  map< int, int > ohdu2index;
   vector< double* > vPix;
   vector< int > vFullNCol;
   vector< int > vNLines;
@@ -274,7 +274,7 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
       continue;
     }
     
-    
+    ohdu2index[n] = vPix.size();
     double* inArray = new double[totpix];
     vPix.push_back(inArray);
     
@@ -313,12 +313,35 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
   }
   
   
-
   const unsigned int nOutHdu = outHdu.size();
   vector<float*> vPixOut;
   for (unsigned int oi=0; oi<nOutHdu; ++oi)  /* Main loop through each extension */
   {
-    const int i = outHdu[oi]-1;
+    const int i = ohdu2index[outHdu[oi]];
+    
+    {
+      /* get input image dimensions and total number of pixels in image */
+      int hdutype, bitpix, naxis = 0;
+      long naxes[9] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
+      fits_movabs_hdu(infptr, outHdu[oi], &hdutype, &status);
+      for (int s = 0; s < 9; ++s) naxes[s] = 1;
+      fits_get_img_param(infptr, 9, &bitpix, &naxis, naxes, &status);
+      long totpix = naxes[0] * naxes[1];
+      double bzero;
+      ffgky(infptr, TDOUBLE, "BZERO", &bzero, NULL, &status);
+      if (status){
+	status = 0;
+	bzero = 0.0;
+      }
+      
+      /* Don't try to process data if the hdu is empty */    
+      if (hdutype != IMAGE_HDU || naxis == 0 || totpix == 0){
+	continue;
+      }
+    }
+    
+    
+    
     float cutVal = 200;
     vector<double> vCoef;
     computeMVASigma(i, cutVal, vPix, vFullNCol, vNLines, vCoef);
