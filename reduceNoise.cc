@@ -212,7 +212,7 @@ void computeMVASigma(const int iExt, const float cutVal, const vector< double* >
 
 
 
-int computeImage(const char *inFile, const char *outFile, const vector<int> &outHdu){
+int computeImage(const char *inFile, const char *outFile, vector<int> &outHdu){
   int status = 0;
   double nulval = 0.;
   int anynul = 0;
@@ -224,15 +224,13 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
   fits_get_num_hdus(infptr, &nhdu, &status);
   if (status != 0) return(status);
   
-  vector<int> inHdu;
-//   for(unsigned int i=0;i<inHdu.size();++i){
-//     if(inHdu[i] > nhdu){
-//       fits_close_file(infptr,  &status);
-//       cerr << red << "\nError: the file does not have the required HDU!\n\n" << normal;
-//       return -1000;
-//     }
-//   }
+
+  const bool outHduProvided = (outHdu.size()>0) ? true : false;
+  if(gVerbosity){
+    if(!outHduProvided) cout << bold << "\nNo list of HDUs provided. Will process all available HDUs\n\n" << normal;
+  }
   
+  vector<int> inHdu;
   if(inHdu.size() == 0){
     for(int i=0;i<nhdu;++i){
       inHdu.push_back(i+1);
@@ -272,6 +270,9 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
     /* Don't try to process data if the hdu is empty */    
     if (hdutype != IMAGE_HDU || naxis == 0 || totpix == 0){
       continue;
+    }
+    if(!outHduProvided){
+      outHdu.push_back(n);
     }
     
     ohdu2index[n] = vPix.size();
@@ -330,13 +331,13 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
       double bzero;
       ffgky(infptr, TDOUBLE, "BZERO", &bzero, NULL, &status);
       if (status){
-	status = 0;
-	bzero = 0.0;
+        status = 0;
+	      bzero  = 0.0;
       }
       
       /* Don't try to process data if the hdu is empty */    
       if (hdutype != IMAGE_HDU || naxis == 0 || totpix == 0){
-	continue;
+	      continue;
       }
     }
     
@@ -361,10 +362,10 @@ int computeImage(const char *inFile, const char *outFile, const vector<int> &out
     vPixOut.push_back(outArray);
     for(int l=0;l<nLines;++l){
       for(int c=0;c<nCol;++c){
-	outArray[nCol*l + c] = vPix[i][ fullNCol*l + c + nCol];// - vPix[i][ fullNCol*l - c + nCol -1]
-	for(unsigned int ex=0; ex<vCoef.size(); ++ex){
-	  outArray[nCol*l + c] -= vCoef[ex]*vPix[ex][ fullNCol*l - c + nCol -1];
-	}
+	      outArray[nCol*l + c] = vPix[i][ fullNCol*l + c + nCol];// - vPix[i][ fullNCol*l - c + nCol -1]
+	      for(unsigned int ex=0; ex<vCoef.size(); ++ex){
+	        outArray[nCol*l + c] -= vCoef[ex]*vPix[ex][ fullNCol*l - c + nCol -1];
+	      }
       }
     }
     
